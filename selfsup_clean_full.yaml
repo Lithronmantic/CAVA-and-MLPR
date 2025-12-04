@@ -1,0 +1,162 @@
+seed: 42
+
+data:
+  data_root:
+  labeled_csv: "./scripts/dataset/train_10p.csv"
+  val_csv: "./scripts/dataset/val_10p.csv"
+  unlabeled_csv: "./scripts/dataset/unlabeled_10p_nolabel.csv"
+  num_classes: 12
+  class_names:
+    - "Good"
+    - "Excessive Convexity"
+    - "Undercut"
+    - "Excessive Penetration"
+    - "Incomplete Penetration"
+    - "Lack of Fusion"
+    - "Overlap"
+    - "Porosity"
+    - "Spatter"
+    - "Arc Strike"
+    - "Crack"
+    - "Burn Through"
+  sampler: "weighted"
+  num_workers_train: 4
+  num_workers_val: 2
+  num_workers_unl: 4
+
+video:
+  num_frames: 8
+  size: 224
+  fps: 8
+
+audio:
+  sample_rate: 16000
+  n_fft: 1024
+  hop_length: 256
+  n_mels: 80
+  fmin: 20
+  fmax: 7600
+
+model:
+  video_backbone:
+    name: "resnet18"
+    weights: "imagenet"
+    frozen_stages: 0
+    out_dim: 512
+  audio_backbone:
+    name: "light_vggish"
+    weights: "none"
+    frozen_stages: 0
+    out_dim: 128
+  fusion:
+    type: "coattn"
+    d_model: 256
+    layers: 2
+    heads: 8
+  init_bias: true
+  mil:
+    topk_ratio: 0.15
+    dropout: 0.3
+    attn_temp: 0.9
+  use_aux_heads: true
+
+cava:
+  enabled: true
+  # ↓↓↓ 新增：使用你刚生成的物理先验（不删原字段）
+  prior_path: "./physical_prior.yaml"
+  init_delay_frames: 4.0
+  # ↓↓↓ 窗口收窄到 ±1 帧，适用于“已对齐”的干净数据
+  delta_low_frames: -1.0
+  delta_high_frames: 1.0
+  dist_max_delay: 1
+  # ↓↓↓ 对齐损失与温度、门控（更“克制”，避免拖后腿）
+  lambda_align: 0.15
+  tau: 0.20
+  gate_min: 0.10
+  # ↓↓↓ 保留你原来的字段与取值（不删除）
+  gate_clip_min: 0.01
+  gate_clip_max: 0.99
+  lambda_causal_sup: 0.0
+  lambda_causal_unsup: 0.0
+  lambda_prior: 0.00
+  lambda_edge: 0.05
+  inject: pre_fusion
+  use_in_coattn: true
+  use_infonce: true
+  edge_margin_ratio: 0.25
+  # ↓↓↓ 新增：学生分支不做错配；Δt 不冻结
+  student_shift_max_frames: 0
+  freeze_delay_epochs: 0
+
+mlpr:
+  enabled: true
+  use_history_stats: true
+  use_cava_signal: true
+  use_prob_vector: false
+  weight_clip: [0.05, 0.95]
+  ema_decay: 0.9998
+  history_momentum: 0.9
+  meta_lr: 1.0e-4
+  T: 0.4
+  lambda_u: 0.5
+  ramp_up_epochs: 3
+  meta_interval: 200
+  inner_lr: 1.0e-5
+
+loss:
+  name: "ce"
+  gamma: 1.0
+  label_smoothing: 0.0
+  class_weights: null
+
+training:
+  use_ssl: true
+  amp: false
+  amp_disable_epoch: 15
+  batch_size: 16
+  num_epochs: 30
+  early_stop_patience: 8
+  # ↓↓↓ 学习率与正则（结合你之前训练停滞的表现做小幅上调）
+  learning_rate: 2.0e-4
+  gradient_clip: 10
+  grad_clip_norm: 1.5
+  backbone_lr_mult: 0.05
+  weight_decay: 5.0e-4
+
+  ssl:
+    # ✅ EMA配置（代码会在Epoch 1-2使用特殊值）
+    ema_decay_init: 0.95
+    ema_decay: 0.999
+    ema_update_interval: 1
+    warmup_epochs: 5
+    # ↓↓↓ 阈值与温度（干净数据上用更高阈值，提高伪标签精度）
+    final_thresh: 0.90
+    consistency_temp: 1.0
+    lambda_u: 1.5
+    use_dist_align: true
+    use_cls_threshold: true
+    thr_min: 0.30
+    cls_thr_momentum: 0.9
+    adaptive_thresh: true
+    eval_with_ema: "auto"
+
+  numerical_stability:
+    check_nan: true
+    nan_recovery: true
+    gradient_anomaly_detection: true
+    reinit_on_nan: true
+
+eval:
+  tune_thresholds: false
+  metrics_topk: 1
+
+# ✅ 说明：动态策略（保持你原注释，不删；但与上方新数值一致）
+# EMA更新策略（让Teacher快速学习）：
+#   Epoch 1: ema_decay≈0.90（由代码内策略控制）
+#   Epoch 2: ema_decay≈0.95
+#   Epoch 3+: ema_decay=0.99-0.999（此处配置为 0.999）
+#
+# 动态阈值策略（平衡质量和数量）：
+#   Epoch 1-2: 主阈值≈0.30, Fallback≈0.25（由 thr_min 与 auto-adjust 控制）
+#   Epoch 3-5: 主阈值从 0.30→0.90 渐进
+#   Epoch 6+: 主阈值=0.90, Fallback≈0.30；必要时在线 AutoAdjust 轻微微调

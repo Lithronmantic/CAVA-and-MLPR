@@ -1,0 +1,26 @@
+# Auto-generated physical prior
+fps: 8.0
+frame_interval_ms: 125.0000
+delta_low_frames: -4
+delta_high_frames: 4
+init_delay_frames: 4.0000
+class_delay_offsets:
+  5: 0.0000
+  1: 0.0000
+  0: 0.0000
+  2: 0.0000
+  7: 0.0000
+  6: 0.0000
+  4: 0.0000
+  10: 0.0000
+  3: 0.0000
+  8: 0.0000
+  11: 0.0000
+  9: 0.0000
+stats_global:
+  count: 168705
+  mean: 499.5154411546783
+  std: 21.584298180895527
+  median: 500.0
+  p10: 500.0
+  p90: 500.0
